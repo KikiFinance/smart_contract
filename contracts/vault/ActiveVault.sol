@@ -8,13 +8,14 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import "../interfaces/IERC20Mintable.sol";
 import '../core/SafeOwnable.sol';
 
-contract KIKIVault is SafeOwnable {
+contract ActiveVault is SafeOwnable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     using SafeERC20 for IERC20Mintable;
 
     event NewHash(bytes32 oldHash, bytes32 newHash, uint256 updateAt);
     event Claim(address user, uint amount, uint totalAmount);
+    event NewReceiver(address oldReceiver, address newReceiver);
 
     bytes32 public rootHash;
     IERC20Mintable immutable public rewardToken;
@@ -22,18 +23,28 @@ contract KIKIVault is SafeOwnable {
     uint256 public totalReleaseAmount;
     uint256 public lastUpdate;
     mapping(address => uint) public userLastUpdate;
+    address public receiver;
 
-    constructor(IERC20Mintable _rewardToken, address _owner) SafeOwnable(_owner) {
+    constructor(IERC20Mintable _rewardToken, address _owner, address _receiver) SafeOwnable(_owner) {
         rewardToken = _rewardToken;
+        require(_receiver != address(0), "illegal receiver");
+        receiver = _receiver;
+        emit NewReceiver(address(0), receiver);
+    }
+
+    function setReceiver(address _receiver) external onlyOwner {
+        require(_receiver != address(0), "illegal receiver");
+        receiver = _receiver;
+        emit NewReceiver(receiver, _receiver);
     }
 
     function updateRootHash(bytes32 _rootHash, uint256 _releaseAmount, uint256 _updateAt) external onlyOwner {
-        require(_updateAt > lastUpdate, "already updateed");
+        //require(_updateAt > lastUpdate, "already updateed");
         lastUpdate = _updateAt;
         emit NewHash(rootHash, _rootHash, _updateAt);
         rootHash = _rootHash;
         if (_releaseAmount > 0) {
-            rewardToken.mint(address(this), _releaseAmount);
+            //rewardToken.mint(address(this), _releaseAmount);
             totalReleaseAmount = totalReleaseAmount.add(_releaseAmount);
         }
     }
@@ -67,5 +78,13 @@ contract KIKIVault is SafeOwnable {
             start = start.add(_sizes[i]);
             claim(_users[i], _amounts[i], currentProof);
         }
+    }
+
+    function ownerWithdraw(uint _amount) external onlyOwner {
+        uint balance = rewardToken.balanceOf(address(this));
+        if (balance < _amount) {
+            _amount = balance;
+        }
+        rewardToken.safeTransfer(receiver, _amount);
     }
 }
